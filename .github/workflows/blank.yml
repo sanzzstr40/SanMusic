@@ -1,0 +1,70 @@
+name: Build San Music
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_BOT_TOKEN: '9161749848:AAGmnkzGUAMxr2fXTFcUrJVb8m9a1Na75H0'
+      TELEGRAM_CHAT_ID: '6068819334'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Buka ZIP project
+        run: |
+          mkdir -p src
+          unzip -q .github/SanMusic-3.2.5.zip -d src
+          ls src
+
+      - name: Siapkan keystore dan local.properties
+        working-directory: src/SanMusic-3.2.5
+        run: |
+          mkdir -p app/keystore
+          if [ ! -f app/keystore/release.keystore ]; then
+            keytool -genkey -keystore app/keystore/release.keystore -alias nanzbeatles -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=San Music, O=SanDev, C=ID"
+          fi
+          if [ ! -f app/keystore/debug.keystore ]; then
+            cp app/keystore/release.keystore app/keystore/debug.keystore
+          fi
+          {
+            echo "sdk.dir=$ANDROID_HOME"
+            echo "release.storeFile=keystore/release.keystore"
+            echo "release.storePassword=android"
+            echo "release.keyAlias=nanzbeatles"
+            echo "release.keyPassword=android"
+            echo "debug.storeFile=keystore/debug.keystore"
+            echo "debug.storePassword=android"
+            echo "debug.keyAlias=nanzbeatles"
+            echo "debug.keyPassword=android"
+          } > local.properties
+
+      - name: Build APK
+        working-directory: src/SanMusic-3.2.5
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleFossMobileUniversalRelease --no-daemon --no-configuration-cache
+
+      - name: Kumpulkan APK
+        run: |
+          mkdir -p out
+          cp "$(find src/SanMusic-3.2.5/app/build/outputs/apk/fossMobileUniversal/release -name '*.apk' | head -n1)" out/SanMusic.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SanMusic-APK
+          path: out/SanMusic.apk
+
+      - name: Kirim APK ke Telegram (opsional)
+        if: success()
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Secret Telegram belum diisi, dilewati"; exit 0
+          fi
+          curl -sS -F "chat_id=$TELEGRAM_CHAT_ID" -F "caption=San Music by SanDev - build selesai" -F "document=@out/SanMusic.apk" "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" | head -c 300
